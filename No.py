@@ -1,8 +1,9 @@
 from datetime import datetime
 
 class No:
-    def __init__(self, data, hora, localizacao, bateria, memoria_int, memoria_ext,
+    def __init__(self, id_no, data, hora, localizacao, bateria, memoria_int, memoria_ext,
                  wifi, bluetooth, conexao, p2p, roteadores):
+        self.id_no = id_no
         self.timestamp = datetime.strptime(f"{data} {hora}", "%d/%m/%Y %H:%M:%S")
         self.latitude, self.longitude = map(float, localizacao.split(','))
         self.bateria = int(bateria)
