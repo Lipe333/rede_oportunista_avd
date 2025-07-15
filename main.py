@@ -3,11 +3,12 @@ import pandas as pd
 import random
 from collections import defaultdict
 from datetime import timedelta
+from collections import defaultdict, deque # Adicione deque aqui
 
 # Parâmetros da simulação
 DATASET_FILE = "dataset_final_29.06.25.txt"
 D_MINIMA = 500   # distância mínima entre origem e destino
-RAIO_COMUNICACAO = 10
+RAIO_COMUNICACAO = 500
 LIMITE_BATERIA = 30
 N_EXECUCOES = 100
 JANELA_TEMPO = 30  # segundos
@@ -46,23 +47,39 @@ for no in nos:
 
 def escolher_pares_validos(nos, D=500):
     tentativas = 0
-    while tentativas < 1000:
+    while tentativas < 2000:
         origem, destino = random.sample(nos, 2)
+        # evita origem == destino
+        if origem.id_no == destino.id_no:
+            tentativas += 1
+            continue
         if origem.distancia_para(destino) >= D and origem.timestamp <= destino.timestamp:
             return origem, destino
         tentativas += 1
     raise RuntimeError("Não foi possível encontrar pares com distância mínima.")
 
-def simular_entrega(origem, destino, nos_por_tempo, raio=10, egoismo=False, prioridade=False, limite_bateria=30):
+def simular_entrega(origem, destino, nos_por_tempo, raio=10, egoismo=False,
+                    prioridade=False, limite_bateria=30, max_saltos=50):
     visitados = set()
-    fila = [(origem, origem.timestamp, 0)]
+    # Mude esta linha:
+    # fila = [(origem, origem.timestamp, 0)]
+    # Para esta:
+    fila = deque([(origem, origem.timestamp, 0)]) # Agora a fila é um deque
     sucesso = False
     latencia = None
     saltos_total = 0
     ttl_max = 0
 
+    timestamps_ordenados = sorted(nos_por_tempo.keys())
+
     while fila:
-        atual, tempo_atual, saltos = fila.pop(0)
+        atual, tempo_atual, saltos = fila.pop()
+
+        # Adicione esta verificação para limitar os saltos
+        if saltos >= max_saltos:
+            # print(f"Caminho descartado: {atual.id_no} excedeu {max_saltos} saltos.") # Opcional para debug
+            continue
+
         visitados.add((atual.id_no, tempo_atual))
 
         if atual.id_no == destino.id_no:
@@ -71,17 +88,23 @@ def simular_entrega(origem, destino, nos_por_tempo, raio=10, egoismo=False, prio
             saltos_total = saltos
             break
 
-        tempo_futuro = tempo_atual + timedelta(seconds=JANELA_TEMPO)
-        proximos = nos_por_tempo.get(tempo_futuro, [])
+        proximos = []
+        for t in timestamps_ordenados:
+            if t < tempo_atual:
+                continue
+            if (t - tempo_atual).total_seconds() > JANELA_TEMPO:
+                break
+            proximos.extend(nos_por_tempo[t])
 
         for vizinho in proximos:
             if (vizinho.id_no, vizinho.timestamp) in visitados:
                 continue
             if not atual.pode_comunicar(vizinho, raio):
                 continue
-            if egoismo and vizinho.bateria < limite_bateria:
-                if not prioridade:
-                    continue
+            if egoismo and vizinho.bateria < limite_bateria and not prioridade:
+                continue
+            # print("Contato possível:", atual.id_no, "->", vizinho.id_no,
+            #       "Dist:", atual.distancia_para(vizinho))
             fila.append((vizinho, vizinho.timestamp, saltos + 1))
 
         ttl_max = max(ttl_max, len(proximos))
@@ -91,13 +114,47 @@ def simular_entrega(origem, destino, nos_por_tempo, raio=10, egoismo=False, prio
 def simular_experimento(nos, nos_por_tempo, N=100, D=500, R=10):
     resultados = {"caso_I": [], "caso_II": [], "caso_III": []}
 
+    # Debug inicial: ver contatos reais
+    # Debug inicial: ver contatos reais
+    contatos = 0
+    # Usaremos um conjunto para armazenar os pares de IDs de forma única
+    # para cada timestamp (ex: (frozenset({1, 3}), datetime_obj))
+    seen_contacts_for_debug_print = set()
+
+    for t, lista in nos_por_tempo.items():
+        # Para cada timestamp, compare todos os pares de nós
+        for i in range(len(lista)):
+            for j in range(i + 1, len(lista)):
+                no1 = lista[i]
+                no2 = lista[j]
+
+                # Certifique-se de que os IDs são diferentes (para não comparar nó com ele mesmo)
+                if no1.id_no == no2.id_no:
+                    continue
+
+                # Verifique se podem se comunicar
+                if no1.pode_comunicar(no2, RAIO_COMUNICACAO):
+                    # Crie uma chave única para o par de IDs (ordem não importa)
+                    # Usamos frozenset para que possa ser um elemento de um set
+                    pair_key = frozenset({no1.id_no, no2.id_no})
+
+                    # Se este par de IDs neste timestamp ainda não foi impresso
+                    if (pair_key, t) not in seen_contacts_for_debug_print:
+                        contatos += 1
+                        print(f"{no1.id_no} <-> {no2.id_no} no tempo {t}")
+                        seen_contacts_for_debug_print.add((pair_key, t))
+
+    print(f"Total de contatos possíveis (pares únicos de IDs por timestamp): {contatos}")
+
+
     for i in range(N):
         try:
             origem, destino = escolher_pares_validos(nos, D)
         except RuntimeError:
             print("Pares não encontrados na execução", i)
             continue
-
+        
+        print("Origem: ",origem.id_no, "Destino:",destino.id_no)
         r1 = simular_entrega(origem, destino, nos_por_tempo, R, egoismo=False)
         r2 = simular_entrega(origem, destino, nos_por_tempo, R, egoismo=True, prioridade=False, limite_bateria=LIMITE_BATERIA)
         r3 = simular_entrega(origem, destino, nos_por_tempo, R, egoismo=True, prioridade=True, limite_bateria=LIMITE_BATERIA)
