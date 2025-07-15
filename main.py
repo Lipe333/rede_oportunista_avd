@@ -11,7 +11,15 @@ D_MINIMA = 500   # distância mínima entre origem e destino
 RAIO_COMUNICACAO = 500
 LIMITE_BATERIA = 30
 N_EXECUCOES = 100
-JANELA_TEMPO = 30  # segundos
+JANELA_TEMPO = 3000  # segundos
+
+""" 
+    Quanto maior o raio de comunicação e a janela de tempo, maior a porcentagem de mensagens entregues, no entanto, a latencia também aumenta
+    Janela de tempo original = 30s
+    Raio original = 10m
+    Distancia original = 500m
+
+"""
 
 # Carregando o dataset
 df = pd.read_csv(DATASET_FILE, delimiter=";", header=None, on_bad_lines="skip")
@@ -59,7 +67,7 @@ def escolher_pares_validos(nos, D=500):
     raise RuntimeError("Não foi possível encontrar pares com distância mínima.")
 
 def simular_entrega(origem, destino, nos_por_tempo, raio=10, egoismo=False,
-                    prioridade=False, limite_bateria=30, max_saltos=50):
+                    prioridade=False, limite_bateria=30, max_saltos=100):
     visitados = set()
     # Mude esta linha:
     # fila = [(origem, origem.timestamp, 0)]
